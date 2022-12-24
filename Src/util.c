@@ -426,7 +426,7 @@ void poweronMelody(void) {
 }
 
 void beepCount(uint8_t cnt, uint8_t freq, uint8_t pattern) {
-    buzzerCount   = cnt;
+    buzzerCount = cnt;
     buzzerFreq    = freq;
     buzzerPattern = pattern;
 }
