@@ -178,8 +178,8 @@ static uint32_t commandL_len = sizeof(commandL);
 #endif
 
 #if defined(CONTROL_SERIAL_USART3)
-static SerialCommand commandR;
-static SerialCommand commandR_raw;
+static MotorControl commandR;
+static MotorControl commandR_raw;
 static uint32_t commandR_len = sizeof(commandR);
   #ifdef CONTROL_IBUS
   static uint16_t ibusR_captured_value[IBUS_NUM_CHANNELS];
@@ -1246,7 +1246,7 @@ void usart_process_debug(uint8_t *userCommand, uint32_t len)
  * - if the command_in data is valid (correct START_FRAME and checksum) copy the command_in to command_out
  */
 #if defined(CONTROL_SERIAL_USART2) || defined(CONTROL_SERIAL_USART3)
-void usart_process_command(SerialCommand *command_in, SerialCommand *command_out, uint8_t usart_idx)
+void usart_process_command(MotorControl *command_in, MotorControl *command_out, uint8_t usart_idx)
 {
   #ifdef CONTROL_IBUS
     uint16_t ibus_chksum;
@@ -1272,8 +1272,8 @@ void usart_process_command(SerialCommand *command_in, SerialCommand *command_out
     }
   #else
   uint16_t checksum;
-  if (command_in->start == SERIAL_START_FRAME) {
-    checksum = (uint16_t)(command_in->start ^ command_in->steer ^ command_in->speed);
+  if (command_in->start == MOTOR_CONTROL_START_FRAME) {
+    checksum = MotorControl_calcChecksum(command_in);
     if (command_in->checksum == checksum) {
       *command_out = *command_in;
       if (usart_idx == 2) {             // Sideboard USART2

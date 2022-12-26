@@ -25,6 +25,8 @@
 #include "rtwtypes.h"
 #endif                                 /* BLDC_controller_COMMON_INCLUDES_ */
 
+#include "usartData.h"
+
 /* Macros for accessing real-time model data structure */
 
 /* Forward declaration for rtModel */
@@ -202,31 +204,7 @@ typedef struct {
   int8_T vec_hallToPos_Value[8];
 } ConstP;
 
-/* External inputs (root inport signals with auto storage) */
-typedef struct {
-  boolean_T b_motEna;                  /* '<Root>/b_motEna' */
-  uint8_T z_ctrlModReq;                /* '<Root>/z_ctrlModReq' */
-  int16_T r_inpTgt;                    /* '<Root>/r_inpTgt' */
-  uint8_T b_hallA;                     /* '<Root>/b_hallA ' */
-  uint8_T b_hallB;                     /* '<Root>/b_hallB' */
-  uint8_T b_hallC;                     /* '<Root>/b_hallC' */
-  int16_T i_phaAB;                     /* '<Root>/i_phaAB' */
-  int16_T i_phaBC;                     /* '<Root>/i_phaBC' */
-  int16_T i_DCLink;                    /* '<Root>/i_DCLink' */
-  int16_T a_mechAngle;                 /* '<Root>/a_mechAngle' */
-} ExtU;
-
-/* External outputs (root outports fed by signals with auto storage) */
-typedef struct {
-  int16_T DC_phaA;                     /* '<Root>/DC_phaA' */
-  int16_T DC_phaB;                     /* '<Root>/DC_phaB' */
-  int16_T DC_phaC;                     /* '<Root>/DC_phaC' */
-  uint8_T z_errCode;                   /* '<Root>/z_errCode' */
-  int16_T n_mot;                       /* '<Root>/n_mot' */
-  int16_T a_elecAngle;                 /* '<Root>/a_elecAngle' */
-  int16_T iq;                          /* '<Root>/iq' */
-  int16_T id;                          /* '<Root>/id' */
-} ExtY;
+// here came the usartData declarations
 
 /* Parameters (auto storage) */
 struct P_ {

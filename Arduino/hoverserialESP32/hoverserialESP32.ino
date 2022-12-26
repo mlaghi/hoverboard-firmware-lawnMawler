@@ -52,19 +52,66 @@ typedef struct{
 } SerialCommand;
 SerialCommand Command;
 
+/* External inputs (root inport signals with auto storage) */
+typedef struct {
+  uint8_t b_motEna;                  /* '<Root>/b_motEna' */
+  uint8_t z_ctrlModReq;                /* '<Root>/z_ctrlModReq' */
+  int16_t r_inpTgt;                    /* '<Root>/r_inpTgt' */
+  uint8_t b_hallA;                     /* '<Root>/b_hallA ' */
+  uint8_t b_hallB;                     /* '<Root>/b_hallB' */
+  uint8_t b_hallC;                     /* '<Root>/b_hallC' */
+  int16_t i_phaAB;                     /* '<Root>/i_phaAB' */
+  int16_t i_phaBC;                     /* '<Root>/i_phaBC' */
+  int16_t i_DCLink;                    /* '<Root>/i_DCLink' */
+  int16_t a_mechAngle;                 /* '<Root>/a_mechAngle' */
+} ExtU;
+
+/* External outputs (root outports fed by signals with auto storage) */
+typedef struct {
+  int16_t DC_phaA;                     /* '<Root>/DC_phaA' */
+  int16_t DC_phaB;                     /* '<Root>/DC_phaB' */
+  int16_t DC_phaC;                     /* '<Root>/DC_phaC' */
+  uint8_t z_errCode;                   /* '<Root>/z_errCode' */
+  int16_t n_mot;                       /* '<Root>/n_mot' */
+  int16_t a_elecAngle;                 /* '<Root>/a_elecAngle' */
+  int16_t iq;                          /* '<Root>/iq' */
+  int16_t id;                          /* '<Root>/id' */
+  uint32_t timestamp;
+} ExtY;
+
+uint16_t ExtU_calcChecksum(ExtU *thisA) {
+  uint16_t checksum = thisA->b_motEna ^ thisA->z_ctrlModReq ^ thisA->r_inpTgt ^ thisA->b_hallA
+    ^ thisA->b_hallB ^ thisA->b_hallC ^ thisA->i_phaAB ^ thisA->i_phaBC ^ thisA->i_DCLink ^ thisA->a_mechAngle;
+    return checksum;
+}
+
+uint16_t ExtY_calcChecksum(ExtY *thisA) {
+  uint16_t checksum = thisA->DC_phaA ^ thisA->DC_phaB ^ thisA->DC_phaC ^ thisA->z_errCode
+    ^ thisA->n_mot ^ thisA->a_elecAngle ^ thisA->iq ^ thisA->id ^ thisA->timestamp;
+    return checksum;
+}
+
+
 typedef struct{
-   uint16_t start;
-   int16_t  cmd1;
-   int16_t  cmd2;
-   int16_t  speedR_meas;
-   int16_t  speedL_meas;
-   int16_t  batVoltage;
-   int16_t  boardTemp;
-   uint16_t cmdLed;
-   uint16_t checksum;
+  uint16_t  start;
+  int16_t   cmd1;
+  int16_t   cmd2;
+  int16_t   speedR_meas;
+  int16_t   speedL_meas;
+  int16_t   batVoltage;
+  int16_t   boardTemp;
+  uint16_t  cmdLed;
+
+  ExtU      rightExtU;
+  ExtU      leftExtU;
+  ExtY      rightExtY;
+  ExtY      leftExtY;
+
+  uint16_t  checksum;
 } SerialFeedback;
+
+SerialFeedback OldFeedback;
 SerialFeedback Feedback;
-SerialFeedback NewFeedback;
 
 // ########################## SETUP ##########################
 void setup() 
@@ -93,8 +140,7 @@ void Send(int16_t uSteer, int16_t uSpeed)
 }
 
 // ########################## RECEIVE ##########################
-void Receive()
-{
+void Receive() {
     // Check for new data availability in the Serial buffer
     if (Serial2.available()) {
         incomingByte 	  = Serial2.read();                                   // Read the incoming byte
@@ -112,7 +158,7 @@ void Receive()
 
     // Copy received data
     if (bufStartFrame == START_FRAME) {	                    // Initialize if new data is detected
-        p       = (byte *)&NewFeedback;
+        p       = (byte *)&Feedback;
         *p++    = incomingBytePrev;
         *p++    = incomingByte;
         idx     = 2;	
@@ -124,23 +170,24 @@ void Receive()
     // Check if we reached the end of the package
     if (idx == sizeof(SerialFeedback)) {
         uint16_t checksum;
-        checksum = (uint16_t)(NewFeedback.start ^ NewFeedback.cmd1 ^ NewFeedback.cmd2 ^ NewFeedback.speedR_meas ^ NewFeedback.speedL_meas
-                            ^ NewFeedback.batVoltage ^ NewFeedback.boardTemp ^ NewFeedback.cmdLed);
+        checksum   = (uint16_t)(Feedback.start ^ Feedback.cmd1 ^ Feedback.cmd2 ^ Feedback.speedR_meas ^ Feedback.speedL_meas 
+                                           ^ Feedback.batVoltage ^ Feedback.boardTemp ^ Feedback.cmdLed);
+        checksum ^= ExtU_calcChecksum(&(Feedback.rightExtU)) ^ ExtU_calcChecksum(&(Feedback.leftExtU)) ^ ExtY_calcChecksum(&(Feedback.rightExtY)) ^ ExtY_calcChecksum(&(Feedback.rightExtY));
 
         // Check validity of the new data
-        if (NewFeedback.start == START_FRAME && checksum == NewFeedback.checksum) {
+        if (Feedback.start == START_FRAME && checksum == Feedback.checksum) {
             // Copy the new data
-            memcpy(&Feedback, &NewFeedback, sizeof(SerialFeedback));
+            memcpy(&OldFeedback, &Feedback, sizeof(SerialFeedback));
 
             // Print data to built-in Serial
             Serial.println("");
-            Serial.print("1(cmd1): ");   Serial.print(Feedback.cmd1);
-            Serial.print(" 2(cmd2): ");  Serial.print(Feedback.cmd2);
-            Serial.print(" 3(speedR): ");  Serial.print(Feedback.speedR_meas);
-            Serial.print(" 4(speedL): ");  Serial.print(Feedback.speedL_meas);
-            Serial.print(" 5(batt.Volt): ");  Serial.print(Feedback.batVoltage);
-            Serial.print(" 6(temp): ");  Serial.print(Feedback.boardTemp);
-            Serial.print(" 7(LED): ");  Serial.println(Feedback.cmdLed);
+            Serial.print("1(cmd1): ");   Serial.print(OldFeedback.cmd1);
+            Serial.print(" 2(cmd2): ");  Serial.print(OldFeedback.cmd2);
+            Serial.print(" 3(speedR): ");  Serial.print(OldFeedback.speedR_meas);
+            Serial.print(" 4(speedL): ");  Serial.print(OldFeedback.speedL_meas);
+            Serial.print(" 5(batt.Volt): ");  Serial.print(OldFeedback.batVoltage);
+            Serial.print(" 6(temp): ");  Serial.print(OldFeedback.boardTemp);
+            Serial.print(" 7(LED): ");  Serial.println(OldFeedback.cmdLed);
             Serial.println("");
         } else {
           Serial.println("Non-valid data skipped");

@@ -18,6 +18,7 @@
  */
 
 #include "BLDC_controller.h"
+#include "stm32f1xx_hal.h"
 
 /* Named constants for Chart: '<S5>/F03_02_Control_Mode_Manager' */
 #define IN_ACTIVE                      ((uint8_T)1U)
@@ -1005,6 +1006,7 @@ void BLDC_controller_step(RT_MODEL *const rtM)
   DW *rtDW = ((DW *) rtM->dwork);
   ExtU *rtU = (ExtU *) rtM->inputs;
   ExtY *rtY = (ExtY *) rtM->outputs;
+  rtY->timestamp = HAL_GetTick(); // Fork: added for debug 
   boolean_T rtb_LogicalOperator;
   int8_T rtb_Sum2_h;
   boolean_T rtb_RelationalOperator4_d;

@@ -22,7 +22,7 @@
 #define UTIL_H
 
 #include <stdint.h>
-
+#include "usartData.h"
 
 // Rx Structures USART
 #if defined(CONTROL_SERIAL_USART2) || defined(CONTROL_SERIAL_USART3)
@@ -33,14 +33,7 @@
       uint8_t  channels[IBUS_NUM_CHANNELS*2];
       uint8_t  checksuml;
       uint8_t  checksumh;
-    } SerialCommand;
-  #else
-    typedef struct{
-      uint16_t  start;
-      int16_t   steer;
-      int16_t   speed;
-      uint16_t  checksum;
-    } SerialCommand;
+    } MotorControl;
   #endif
 #endif
 #if defined(SIDEBOARD_SERIAL_USART2) || defined(SIDEBOARD_SERIAL_USART3)
@@ -98,7 +91,7 @@ void usart3_rx_check(void);
 void usart_process_debug(uint8_t *userCommand, uint32_t len);
 #endif
 #if defined(CONTROL_SERIAL_USART2) || defined(CONTROL_SERIAL_USART3)
-void usart_process_command(SerialCommand *command_in, SerialCommand *command_out, uint8_t usart_idx);
+void usart_process_command(MotorControl *command_in, MotorControl *command_out, uint8_t usart_idx);
 #endif
 #if defined(SIDEBOARD_SERIAL_USART2) || defined(SIDEBOARD_SERIAL_USART3)
 void usart_process_sideboard(SerialSideboard *Sideboard_in, SerialSideboard *Sideboard_out, uint8_t usart_idx);
