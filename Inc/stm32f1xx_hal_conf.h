@@ -90,6 +90,9 @@ extern "C" {
 #define HAL_PWR_MODULE_ENABLED
 #define HAL_RCC_MODULE_ENABLED
 
+#define HAL_EXTI_MODULE_ENABLED
+
+
 /* ########################## Oscillator Values adaptation ####################*/
 /**
   * @brief Adjust the value of External High Speed oscillator (HSE) used in your application.
@@ -338,6 +341,9 @@ extern "C" {
 #include "stm32f1xx_hal_hcd.h"
 #endif /* HAL_HCD_MODULE_ENABLED */
 
+#ifdef HAL_EXTI_MODULE_ENABLED
+#include "stm32f1xx_hal_exti.h"
+#endif /* HAL_EXTI_MODULE_ENABLED */
 
 /* Exported macro ------------------------------------------------------------*/
 #ifdef USE_FULL_ASSERT

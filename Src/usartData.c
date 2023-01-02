@@ -31,27 +31,35 @@ uint16_T MainStatus_calcChecksum(MainStatus *ptr) {
 #ifdef USE_EXTY
     checksum ^= ExtY_calcChecksum(&(ptr->rightExtY)) ^ ExtY_calcChecksum(&(ptr->rightExtY));
 #endif
+#ifdef USE_POSITION_STATUS
+    checksum ^= PositionStatus_calcChecksum(&(ptr->position));
+#endif
     return checksum;
 }
 
-void MainStatus_fillExtraData(MainStatus *ptr, void *extURight, void *extULeft, void *extYRight, void *extYLeft) {
+void MainStatus_fillExtraData(MainStatus *ptr, void *extURight, void *extULeft, void *extYRight, void *extYLeft, void *position) {
 #ifdef USE_EXTU
-  memcpy(&ptr->rightExtU, &extURight, sizeof(ExtU));
-  memcpy(&ptr->leftExtU, &extULeft, sizeof(ExtU));
+  memcpy(&ptr->rightExtU, extURight, sizeof(ExtU));
+  memcpy(&ptr->leftExtU, extULeft, sizeof(ExtU));
 #endif
 #ifdef USE_EXTY
-  memcpy(&ptr->rightExtY, &extYRight, sizeof(ExtY));
-  memcpy(&ptr->leftExtY, &extYLeft, sizeof(ExtY));
+  memcpy(&ptr->rightExtY, extYRight, sizeof(ExtY));
+  memcpy(&ptr->leftExtY, extYLeft, sizeof(ExtY));
+#endif
+#ifdef USE_POSITION_STATUS
+  memcpy(&ptr->position, position, sizeof(PositionStatus));
 #endif
 }
 
 #endif  // USE_MAIN_STATUS
 
-
 #ifdef USE_MOTOR_CONTROL
 
 uint16_T MotorControl_calcChecksum(MotorControl *ptr) {
-  uint16_T checksum = (uint16_T)(ptr->start ^ ptr->steer ^ ptr->speed);
+  uint16_T checksum = (uint16_T)(ptr->start ^ ptr->steer ^ ptr->speed ^ ptr->modeType ^ ptr->standby);
+#ifdef USE_SIDEBOARD_CONTROL
+  checksum ^= (uint16_T)(ptr->ledCmd ^ ptr->ledMask);
+#endif  
   return checksum;
 }
 
@@ -67,3 +75,13 @@ uint16_T PositionStatus_calcChecksum(PositionStatus *ptr) {
 }
 
 #endif // USE_POSITION_STATUS
+
+#ifdef USE_SIDEBOARD_CONTROL
+
+uint16_T SideboardControl_calcChecksum(SideboardControl *ptr) {
+  uint16_T checksum = (uint16_T)(ptr->start ^ ptr->cmd ^ ptr->mask);
+  return checksum;
+}
+
+#endif // USE_SIDEBOARD_CONTROL
+

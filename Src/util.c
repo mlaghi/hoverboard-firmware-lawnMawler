@@ -130,6 +130,7 @@ uint16_t VirtAddVarTab[NB_OF_VAR] = {1000};       // Dummy virtual address to av
 static int16_t INPUT_MAX;             // [-] Input target maximum limitation
 static int16_t INPUT_MIN;             // [-] Input target minimum limitation
 
+static uint8_t blockedMotors;
 
 #if !defined(VARIANT_HOVERBOARD) && !defined(VARIANT_TRANSPOTTER)
   static uint8_t  cur_spd_valid  = 0;
@@ -149,8 +150,8 @@ static uint16_t timeoutCntSerial_L = SERIAL_TIMEOUT;  // Timeout counter for Rx 
 static uint8_t  timeoutFlgSerial_L = 0;               // Timeout Flag for Rx Serial command: 0 = OK, 1 = Problem detected (line disconnected or wrong Rx data)
 #endif
 #if defined(SIDEBOARD_SERIAL_USART2)
-SerialSideboard Sideboard_L;
-SerialSideboard Sideboard_L_raw;
+PositionStatus Sideboard_L;
+PositionStatus Sideboard_L_raw;
 static uint32_t Sideboard_L_len = sizeof(Sideboard_L);
 #endif
 
@@ -163,8 +164,8 @@ static uint16_t timeoutCntSerial_R = SERIAL_TIMEOUT;  // Timeout counter for Rx 
 static uint8_t  timeoutFlgSerial_R = 0;               // Timeout Flag for Rx Serial command: 0 = OK, 1 = Problem detected (line disconnected or wrong Rx data)
 #endif
 #if defined(SIDEBOARD_SERIAL_USART3)
-SerialSideboard Sideboard_R;
-SerialSideboard Sideboard_R_raw;
+PositionStatus Sideboard_R;
+PositionStatus Sideboard_R_raw;
 static uint32_t Sideboard_R_len = sizeof(Sideboard_R);
 #endif
 
@@ -178,8 +179,9 @@ static uint32_t commandL_len = sizeof(commandL);
 #endif
 
 #if defined(CONTROL_SERIAL_USART3)
-static MotorControl commandR;
+/*static*/ MotorControl commandR;
 static MotorControl commandR_raw;
+
 static uint32_t commandR_len = sizeof(commandR);
   #ifdef CONTROL_IBUS
   static uint16_t ibusR_captured_value[IBUS_NUM_CHANNELS];
@@ -228,6 +230,8 @@ static uint8_t standstillAcv = 0;
 
  
 /* =========================== Initialization Functions =========================== */
+
+void setDrivingModes(uint8_t modeType);
 
 void BLDC_Init(void) {
   /* Set BLDC controller parameters */ 
@@ -884,8 +888,8 @@ void readInputRaw(void) {
 
     #if defined(SIDEBOARD_SERIAL_USART2)
     if (inIdx == SIDEBOARD_SERIAL_USART2) {
-      input1[inIdx].raw = Sideboard_L.cmd1;
-      input2[inIdx].raw = Sideboard_L.cmd2;
+      //input1[inIdx].raw = Sideboard_L.cmd1; // FORK
+      //input2[inIdx].raw = Sideboard_L.cmd2; // FORK
     }
     #endif
     #if defined(SIDEBOARD_SERIAL_USART3)
@@ -966,11 +970,13 @@ void handleTimeout(void) {
         #endif
       } else {                                          // No Timeout
         #if defined(DUAL_INPUTS) && defined(SIDEBOARD_SERIAL_USART2)
+        /* FORK
           if (Sideboard_L.sensors & SWA_SET) {          // If SWA is set, switch to Sideboard control
             inIdx = SIDEBOARD_SERIAL_USART2;
           } else {
             inIdx = !SIDEBOARD_SERIAL_USART2;
           }
+        */
         #elif defined(DUAL_INPUTS) && (defined(CONTROL_SERIAL_USART2) && CONTROL_SERIAL_USART2 == 1)
           inIdx = 1;                                    // Switch to Auxiliary input in case of NO Timeout on Auxiliary input
         #endif
@@ -1276,6 +1282,7 @@ void usart_process_command(MotorControl *command_in, MotorControl *command_out, 
     checksum = MotorControl_calcChecksum(command_in);
     if (command_in->checksum == checksum) {
       *command_out = *command_in;
+      setDrivingModes(command_out->modeType);
       if (usart_idx == 2) {             // Sideboard USART2
         #ifdef CONTROL_SERIAL_USART2
         timeoutFlgSerial_L = 0;         // Clear timeout flag
@@ -1298,11 +1305,13 @@ void usart_process_command(MotorControl *command_in, MotorControl *command_out, 
  * - if the Sideboard_in data is valid (correct START_FRAME and checksum) copy the Sideboard_in to Sideboard_out
  */
 #if defined(SIDEBOARD_SERIAL_USART2) || defined(SIDEBOARD_SERIAL_USART3)
-void usart_process_sideboard(SerialSideboard *Sideboard_in, SerialSideboard *Sideboard_out, uint8_t usart_idx)
+void usart_process_sideboard(PositionStatus *Sideboard_in, PositionStatus *Sideboard_out, uint8_t usart_idx)
 {
   uint16_t checksum;
-  if (Sideboard_in->start == SERIAL_START_FRAME) {
-    checksum = (uint16_t)(Sideboard_in->start ^ Sideboard_in->pitch ^ Sideboard_in->dPitch ^ Sideboard_in->cmd1 ^ Sideboard_in->cmd2 ^ Sideboard_in->sensors);
+  uint16_t checksum2;
+  if (Sideboard_in->start == POSITION_STATUS_START_FRAME) {
+    checksum = PositionStatus_calcChecksum(Sideboard_in);
+    checksum2 = Sideboard_in->checksum;
     if (Sideboard_in->checksum == checksum) {
       *Sideboard_out = *Sideboard_in;
       if (usart_idx == 2) {             // Sideboard USART2
@@ -1396,6 +1405,74 @@ void sideboardLeds(uint8_t *leds) {
   #endif
 }
 
+
+/*
+ * Handling of driving modes / types coming from the UART3
+ * Currently only right motor determines mode and type for both motors.
+ * Separate handling can be implemented in the future without need to change interface.
+ */
+void setDrivingModes(uint8_t modeType) {
+  #if (defined(SIDEBOARD_SERIAL_USART2) || defined(SIDEBOARD_SERIAL_USART3))
+  if (modeType & 128) { // otherwise no effect
+    if (modeType == 255) { // block everything i.e. put it in open and speeds 0
+      ctrlModReqRaw = OPEN_MODE;
+      rtP_Right.z_ctrlTypSel = rtP_Left.z_ctrlTypSel = FOC_CTRL;
+      blockedMotors = 1;
+    }
+    else if (modeType == 254) {
+      blockedMotors = 0;
+    }
+    else if (!blockedMotors) {
+      if (modeType & 1) {
+      if (modeType & 2)
+        ctrlModReqRaw = TRQ_MODE; // 3
+      else
+        ctrlModReqRaw = SPD_MODE; // 1
+      }
+      else { // 0
+        if (modeType & 2)
+          ctrlModReqRaw = VLT_MODE; // 2
+        else
+          ctrlModReqRaw = OPEN_MODE; // 0
+      }
+      if (modeType & 4) {
+        if (modeType & 8)
+          rtP_Right.z_ctrlTypSel = rtP_Left.z_ctrlTypSel = FOC_CTRL; // 12 this is a state which does not occur 12
+        else
+          rtP_Right.z_ctrlTypSel = rtP_Left.z_ctrlTypSel = FOC_CTRL; // 4
+      }
+      else {
+        if (modeType & 8)
+          rtP_Right.z_ctrlTypSel = rtP_Left.z_ctrlTypSel = COM_CTRL; // 8
+        else
+          rtP_Right.z_ctrlTypSel = rtP_Left.z_ctrlTypSel = SIN_CTRL; // 0
+      }
+    }
+  }
+    // Control MODE and Control Type Handling
+        /*
+        case 0:     // FOC VOLTAGE : 128 + 4 + 2 = 134 
+          rtP_Left.z_ctrlTypSel = rtP_Right.z_ctrlTypSel = FOC_CTRL;
+          ctrlModReqRaw         = VLT_MODE;
+        case 1:     // FOC SPEED 128 + 4 + 1 = 133
+          rtP_Left.z_ctrlTypSel = rtP_Right.z_ctrlTypSel = FOC_CTRL;
+          ctrlModReqRaw         = SPD_MODE;
+        case 2:     // FOC TORQUE 128 + 4 + 3 = 135
+          rtP_Left.z_ctrlTypSel = rtP_Right.z_ctrlTypSel = FOC_CTRL;
+          ctrlModReqRaw         = TRQ_MODE;
+        case 3:     // SINUSOIDAL 128 + 0 + 0 = 128
+          rtP_Left.z_ctrlTypSel = rtP_Right.z_ctrlTypSel = SIN_CTRL;
+        case 4:     // COMMUTATION 128 + 8 + 0 = 136
+          rtP_Left.z_ctrlTypSel = rtP_Right.z_ctrlTypSel = COM_CTRL;
+
+          and open: 128 + 4 + 0 = 132
+        */
+  #endif
+}
+
+
+
+
 /*
  * Sideboard Sensor Handling
  * This function manages the sideboards photo sensors.
@@ -1408,7 +1485,7 @@ void sideboardSensors(uint8_t sensors) {
     uint8_t sensor1_trig = 0, sensor2_trig = 0;
     #if defined(SIDEBOARD_SERIAL_USART2)
     uint8_t  sideboardIdx = SIDEBOARD_SERIAL_USART2;
-    uint16_t sideboardSns = Sideboard_L.sensors;
+    uint16_t sideboardSns = 0; // Sideboard_L.sensors; // FORK
     #else
     uint8_t  sideboardIdx = SIDEBOARD_SERIAL_USART3;
     uint16_t sideboardSns = Sideboard_R.sensors;
@@ -1495,7 +1572,6 @@ void sideboardSensors(uint8_t sensors) {
       #endif  // CRUISE_CONTROL_SUPPORT
   #endif
 }
-
 
 
 /* =========================== Poweroff Functions =========================== */
@@ -1689,14 +1765,15 @@ void mixerFcn(int16_t rtu_speed, int16_t rtu_steer, int16_t *rty_speedR, int16_t
     int32_t tmp;
 
     prodSpeed   = (int16_t)((rtu_speed * (int16_t)SPEED_COEFFICIENT) >> 14);
-    prodSteer   = (int16_t)((rtu_steer * (int16_t)STEER_COEFFICIENT) >> 14);
+    // prodSteer   = (int16_t)((rtu_steer * (int16_t)STEER_COEFFICIENT) >> 14);
+    prodSteer   = (int16_t)((rtu_steer * (int16_t)SPEED_COEFFICIENT) >> 14);
 
-    tmp         = prodSpeed - prodSteer;  
+    tmp         = prodSpeed; //  - prodSteer;  
     tmp         = CLAMP(tmp, -32768, 32767);  // Overflow protection
     *rty_speedR = (int16_t)(tmp >> 4);        // Convert from fixed-point to int 
     *rty_speedR = CLAMP(*rty_speedR, INPUT_MIN, INPUT_MAX);
 
-    tmp         = prodSpeed + prodSteer;
+    tmp         = /*prodSpeed +*/ prodSteer;
     tmp         = CLAMP(tmp, -32768, 32767);  // Overflow protection
     *rty_speedL = (int16_t)(tmp >> 4);        // Convert from fixed-point to int
     *rty_speedL = CLAMP(*rty_speedL, INPUT_MIN, INPUT_MAX);

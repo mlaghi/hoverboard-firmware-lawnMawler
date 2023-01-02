@@ -64,6 +64,8 @@ void DMA2_Channel4_5_IRQHandler(void);
 void USART2_IRQHandler(void);
 void USART3_IRQHandler(void);
 
+void EXTI3_IRQHandler(void);
+
 #ifdef __cplusplus
 }
 #endif

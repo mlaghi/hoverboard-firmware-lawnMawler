@@ -87,10 +87,12 @@ extern uint8_t enable;                  // global variable for motor enable
 extern int16_t batVoltage;              // global variable for battery voltage
 
 #if defined(SIDEBOARD_SERIAL_USART2)
-extern SerialSideboard Sideboard_L;
+extern PositionStatus Sideboard_L;
+extern MotorControl commandR;
+
 #endif
 #if defined(SIDEBOARD_SERIAL_USART3)
-extern SerialSideboard Sideboard_R;
+extern PositionControl Sideboard_R;
 #endif
 #if (defined(CONTROL_PPM_LEFT) && defined(DEBUG_SERIAL_USART3)) || (defined(CONTROL_PPM_RIGHT) && defined(DEBUG_SERIAL_USART2))
 extern volatile uint16_t ppm_captured_value[PPM_NUM_CHANNELS+1];
@@ -114,6 +116,8 @@ int16_t right_dc_curr;           // global variable for Right DC Link current
 int16_t dc_curr;                 // global variable for Total DC Link current 
 int16_t cmdL;                    // global variable for Left Command 
 int16_t cmdR;                    // global variable for Right Command 
+uint32_t lastSentTimestamp;      // FORK: used to identify the time of measurement and to detect if new data
+SideboardControl sideboardCtrl;
 
 //------------------------------------------------------------------------
 // Local variables
@@ -161,9 +165,73 @@ static uint16_t rate = RATE; // Adjustable rate to support multiple drive modes 
 #endif
 
 
+// testing code
+
+RTC_HandleTypeDef hrtc;
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+
+  /* USER CODE END Error_Handler_Debug */
+  /*
+  for (int i=0; i < 6; i++) {
+    HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+    HAL_Delay(100);
+  }
+  for (int i=0; i < 6; i++) {
+    HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+    HAL_Delay(300);
+  }
+  for (int i=0; i < 6; i++) {
+    HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+    HAL_Delay(100);
+  }
+  */
+  while (1) {
+    ;
+  }
+}
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+  if(GPIO_Pin == GPIO_PIN_3) {
+    SysTick->CTRL = 1;
+    HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
+    NVIC_SystemReset();
+  } else {
+      __NOP();
+  }
+}
+
+void stopProcessor(void) {
+  HAL_Delay(5000); // to be able to flash again in case of problems.
+  HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_RESET);
+  __HAL_UART_DISABLE_IT(&huart3, UART_IT_RXNE);
+  __HAL_UART_DISABLE_IT(&huart2, UART_IT_RXNE);
+  GPIO_InitTypeDef GPIO_InitStruct;
+  GPIO_InitStruct.Mode  = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull  = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  HAL_NVIC_SetPriority(EXTI3_IRQn, 1, 1);
+  HAL_NVIC_EnableIRQ(EXTI3_IRQn);
+  SysTick->CTRL = 0;
+  HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
+  HAL_Delay(2000);
+  HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
+  NVIC_SystemReset();
+}
+
 int main(void) {
 
   HAL_Init();
+
   __HAL_RCC_AFIO_CLK_ENABLE();
   HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
   /* System interrupt init*/
@@ -186,6 +254,7 @@ int main(void) {
 
   __HAL_RCC_DMA1_CLK_DISABLE();
   MX_GPIO_Init();
+
   MX_TIM_Init();
   MX_ADC1_Init();
   MX_ADC2_Init();
@@ -201,7 +270,7 @@ int main(void) {
   poweronMelody();
 
   HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
-  
+
   int32_t board_temp_adcFixdt = adc_buffer.temp << 16;  // Fixed-point filter output initialized with current ADC converted to fixed-point
   int16_t board_temp_adcFilt  = adc_buffer.temp;
 
@@ -450,7 +519,7 @@ int main(void) {
 
     // ####### SIDEBOARDS HANDLING #######
     #if defined(SIDEBOARD_SERIAL_USART2)
-      sideboardSensors((uint8_t)Sideboard_L.sensors);
+      // sideboardSensors((uint8_t)Sideboard_L.sensors); // FORK
     #endif
     #if defined(FEEDBACK_SERIAL_USART2)
       sideboardLeds(&sideboard_leds_L);
@@ -497,7 +566,9 @@ int main(void) {
 
     // ####### FEEDBACK SERIAL OUT #######
     #if defined(FEEDBACK_SERIAL_USART2) || defined(FEEDBACK_SERIAL_USART3)
-      if (main_loop_counter % 2 == 0) {    // Send data periodically every 10 ms
+      // if (main_loop_counter % 2 == 0) {    // Send data periodically every 10 ms
+        if (lastSentTimestamp != rtY_Right.timestamp) {     // Check if DMA channel counter is 0 (meaning all data has been transferred) and only on new data
+
         Feedback.start	        = (uint16_t)MAIN_STATUS_START_FRAME;
         Feedback.cmd1           = (int16_t)input1[inIdx].cmd;
         Feedback.cmd2           = (int16_t)input2[inIdx].cmd;
@@ -505,7 +576,8 @@ int main(void) {
         Feedback.speedL_meas	  = (int16_t)rtY_Left.n_mot;
         Feedback.batVoltage	    = (int16_t)batVoltageCalib;
         Feedback.boardTemp	    = (int16_t)board_temp_deg_c;
-        MainStatus_fillExtraData(&Feedback, &rtU_Right, &rtU_Left, &rtY_Right, &rtY_Left);
+        MainStatus_fillExtraData(&Feedback, &rtU_Right, &rtU_Left, &rtY_Right, &rtY_Left, &Sideboard_L);
+        lastSentTimestamp = rtY_Right.timestamp;
         #if defined(FEEDBACK_SERIAL_USART2)
           if(__HAL_DMA_GET_COUNTER(huart2.hdmatx) == 0) {
             Feedback.cmdLed     = (uint16_t)sideboard_leds_L;
@@ -521,13 +593,19 @@ int main(void) {
             Feedback.checksum   = MainStatus_calcChecksum(&Feedback);
             HAL_UART_Transmit_DMA(&huart3, (uint8_t *)&Feedback, sizeof(Feedback));
           }
+          if((sideboardCtrl.cmd != commandR.ledCmd || sideboardCtrl.mask != commandR.ledMask) && __HAL_DMA_GET_COUNTER(huart2.hdmatx) == 0) {
+            sideboardCtrl.start = SIDEBOARD_CONTROL_START_FRAME;
+            sideboardCtrl.cmd   = commandR.ledCmd;
+            sideboardCtrl.mask  = commandR.ledMask;
+            sideboardCtrl.checksum = SideboardControl_calcChecksum(&sideboardCtrl);
+            HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&sideboardCtrl, sizeof(SideboardControl));
+          }
         #endif
       }
     #endif
 
     // ####### POWEROFF BY POWER-BUTTON #######
     poweroffPressCheck();
-
     // ####### BEEP AND EMERGENCY POWEROFF #######
     if (TEMP_POWEROFF_ENABLE && board_temp_deg_c >= TEMP_POWEROFF && speedAvgAbs < 20){  // poweroff before mainboard burns OR low bat 3
       #if defined(DEBUG_SERIAL_USART2) || defined(DEBUG_SERIAL_USART3)
@@ -611,7 +689,9 @@ void SystemClock_Config(void) {
   RCC_OscInitStruct.PLL.PLLState        = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource       = RCC_PLLSOURCE_HSI_DIV2;
   RCC_OscInitStruct.PLL.PLLMUL          = RCC_PLL_MUL16;
-  HAL_RCC_OscConfig(&RCC_OscInitStruct);
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+    Error_Handler();
+  }
 
   /**Initializes the CPU, AHB and APB busses clocks
     */
@@ -621,12 +701,17 @@ void SystemClock_Config(void) {
   RCC_ClkInitStruct.APB1CLKDivider      = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider      = RCC_HCLK_DIV1;
 
-  HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2);
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) {
+    Error_Handler();
+  }
 
   PeriphClkInit.PeriphClockSelection    = RCC_PERIPHCLK_ADC;
+  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_HSE_DIV128;
   // PeriphClkInit.AdcClockSelection    = RCC_ADCPCLK2_DIV8;  // 8 MHz
   PeriphClkInit.AdcClockSelection       = RCC_ADCPCLK2_DIV4;  // 16 MHz
-  HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit);
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK) {
+    Error_Handler();    
+  }
 
   /**Configure the Systick interrupt time
     */

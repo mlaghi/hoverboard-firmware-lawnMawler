@@ -45,7 +45,7 @@
       int16_t   cmd2;       // RC Channel 2
       uint16_t  sensors;    // RC Switches and Optical sideboard sensors
       uint16_t  checksum;
-    } SerialSideboard;
+    } SerialSideboardAAA;
 #endif
 
 // Input Structure
@@ -94,7 +94,7 @@ void usart_process_debug(uint8_t *userCommand, uint32_t len);
 void usart_process_command(MotorControl *command_in, MotorControl *command_out, uint8_t usart_idx);
 #endif
 #if defined(SIDEBOARD_SERIAL_USART2) || defined(SIDEBOARD_SERIAL_USART3)
-void usart_process_sideboard(SerialSideboard *Sideboard_in, SerialSideboard *Sideboard_out, uint8_t usart_idx);
+void usart_process_sideboard(PositionStatus *Sideboard_in, PositionStatus *Sideboard_out, uint8_t usart_idx);
 #endif
 
 // Sideboard functions

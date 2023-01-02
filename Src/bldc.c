@@ -81,10 +81,14 @@ static int16_t offsetdcr    = 2000;
 int16_t        batVoltage       = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE;
 static int32_t batVoltageFixdt  = (400 * BAT_CELLS * BAT_CALIB_ADC) / BAT_CALIB_REAL_VOLTAGE << 16;  // Fixed-point filter output initialized at 400 V*100/cell = 4 V/cell converted to fixed-point
 
+// int count = 0;
 // =================================
 // DMA interrupt frequency =~ 16 kHz
 // =================================
 void DMA1_Channel1_IRQHandler(void) {
+  // if (count % 1000 == 0)
+  //  HAL_GPIO_TogglePin(LED_PORT, LED_PIN);
+  // count++;  
 
   DMA1->IFCR = DMA_IFCR_CTCIF1;
   // HAL_GPIO_WritePin(LED_PORT, LED_PIN, 1);

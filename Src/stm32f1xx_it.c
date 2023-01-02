@@ -380,6 +380,9 @@ void USART3_IRQHandler(void)
 
 
 /* USER CODE BEGIN 1 */
-
+void EXTI3_IRQHandler(void)   // <----- The ISR Function We're Looking For!
+{
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_3);
+}
 /* USER CODE END 1 */
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
