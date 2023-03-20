@@ -1,5 +1,7 @@
 #include "CommandWebHandler.h"
 #include "StreamWebHandler.h"
+#include "HCSR04Sensor.h"
+#include "Locator.h"
 
 #define SERIAL_BAUD         115200
 #define TIME_SEND           100         // [ms] Sending time interval
@@ -23,16 +25,27 @@ int speed = 0;
 int steer = 0;
 int ledCmd = 0;
 int ledMask = 0;
+bool blockWrites = false;
 
-void readSerialVal() { // currently unused
-  if (Serial.available() > 0) {
-    String txt = Serial.readString();
-    txt.trim();
-    int currentSize;
-    sscanf(txt.c_str(), "%d %d %d %d", &speed, &steer, &ledCmd, &ledMask);
-    Serial.printf("%d %d %d %d\n", speed, steer, ledCmd, ledMask);
-  }
+// #define INPUT_ECHO = GPIO_NUM_23
+// #define OUTPUT_SOUND = GPIO_NUM_22
+
+HCSR04Sensor usSensor(GPIO_NUM_23);
+
+
+void checkPerformance() {
+	com::aviotics::motion::Locator locator;
+	PosDir posDir;
+	PosDir_init(&posDir, 40.0, 1.0, 0.0);
+	locator.fillRectangleObstacles(0.0, 0.0, 50.0, 40.0, 0.05);
+	uint32_t t0 = millis();
+	FLOAT val = 0.0;
+	for (int i=0; i < 100; i++)
+		val = locator.calcSignal(posDir);
+	uint32_t t1 = millis();
+	Serial.printf("Distance: %f\t%d\n", val, t1-t0);
 }
+
 
 // ########################## SETUP ##########################
 void setup() {
@@ -46,20 +59,29 @@ void setup() {
   cmdWebHandler.init(&command);
   streamWebHandler.init(&Serial2);  
   webServer.addWifiAccess("mic08", "frifra20");
-  webServer.addWifiAccess("laghi2022", "N0T4u2now");
+  webServer.addWifiAccess("NewLaghi2023!", "Laghi2023!");
 
   webServer.init(&cmdWebHandler, &streamWebHandler, 80, "mic00", "frifra20", 35);
   Serial.println(webServer.getIP());
 
   pinMode(LED_BUILTIN, OUTPUT);
+  usSensor.setTemperature(20);
+
+  // checkPerformance();
+
 }
 
 uint16_t sentChecksum = 0;
+int count = 0;
+
 
 // ########################## SEND ##########################
-void send(int16_t uSteer, int16_t uSpeed, uint8_t ledCmd, uint8_t ledMask) {
+void send() {
   // Create command
   command.start    = (uint16_t)MOTOR_CONTROL_START_FRAME;
+  if (blockWrites && command.ledCmd == 255)
+    return;
+  blockWrites = false;
   /*
   command.steer    = (int16_t)uSteer;
   command.speed    = (int16_t)uSpeed;
@@ -73,6 +95,9 @@ void send(int16_t uSteer, int16_t uSpeed, uint8_t ledCmd, uint8_t ledMask) {
   }
   // Write to Serial
   Serial2.write((uint8_t *) &command, sizeof(command));
+  // Serial.printf("Send over UART %d\n", count++);
+  if (command.ledCmd == 255)
+    blockWrites = true;
 }
 
 // ########################## LOOP ##########################
@@ -80,6 +105,21 @@ void send(int16_t uSteer, int16_t uSpeed, uint8_t ledCmd, uint8_t ledMask) {
 unsigned long iTimeSend = 0;
 int iTest = 0;
 int iStep = SPEED_STEP;
+
+uint32_t lastOutput = 0L;
+
+void loopMeasurement(void) {
+  usSensor.startMeasurement();
+  int32_t delta = usSensor.getResult();
+  uint32_t now = millis();
+  if (now - lastOutput > 30000)
+    usSensor.setDebug(true);
+  if (delta > -1) {
+    lastOutput = now;
+    Serial.printf("time: %d [us]\tdistance=%7.3f [m]\n", delta, usSensor.getMeters(delta));
+  }
+  delay(1);
+}
 
 void loop(void) { 
   unsigned long timeNow = millis();
@@ -90,7 +130,7 @@ void loop(void) {
   if (iTimeSend > timeNow) return;
   iTimeSend = timeNow + TIME_SEND;
   // send(0, iTest);
-  send(steer, speed, ledCmd, ledMask);
+  send();
 
   // Calculate test command signal
   iTest += iStep;

@@ -14,8 +14,12 @@ class StreamWebHandler : public com::aviotics::web::WebServerInterface {
     byte incomingByte;
     byte incomingBytePrev;
 
-    MainStatus OldFeedback;
-    MainStatus Feedback;
+    MainStatus oldFeedback;
+    MainStatus feedback;
+    uint16_T oldChecksum;
+    uint16_T newChecksum;
+    uint32_t failures;
+    uint32_t successes;
 
     int printExtUHeader(char *buf, int offs);
     int printExtU(char *buf, int offs, ExtU *extU);
@@ -32,6 +36,9 @@ class StreamWebHandler : public com::aviotics::web::WebServerInterface {
     ~StreamWebHandler();
     void init(HardwareSerial *serial);
     esp_err_t request(httpd_req_t *req, const char* buf, size_t bufSize, char *resp, size_t respSize);
+    void serialReceiveLoop();
+
+    const MainStatus *getFeedback();
 };
 
 #endif

@@ -17,7 +17,7 @@ esp_err_t CommandWebHandler::requestSequence(const char* buf, size_t bufSize) {
   String str = buf;
   str.replace("%20", "   ");
   buf = str.c_str();
-   Serial.printf("requestSequence %s\n", buf);
+   Serial.printf("Core %d: requestSequence %s\n", xPortGetCoreID(), buf);
    return ESP_OK;
 }
 
@@ -44,7 +44,7 @@ esp_err_t CommandWebHandler::request(httpd_req_t *req, const char* buf, size_t b
   }
   
   variable[0] = 0;
-  if (httpd_query_key_value(buf, "leds", variable, sizeof(variable)) == ESP_OK) {
+  if (httpd_query_key_value(buf, "ledCmd", variable, sizeof(variable)) == ESP_OK) {
     motorControl->ledCmd = atoi(variable);
     motorControl->ledMask = 255;
     Serial.printf("motorControl: %d\n", motorControl->ledCmd);

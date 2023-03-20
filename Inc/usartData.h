@@ -156,6 +156,7 @@ SIN_CTRL        1 32
 FOC_CTRL        2 64  *
 ENABLE            128 : needs to be set otherwise all command is ignored.
 
+modeType
   128: SINUSOIDAL
   132: FOC_OPEN
   133: FOC_SPEED
@@ -184,6 +185,36 @@ typedef struct {
 uint16_T MotorControl_calcChecksum(MotorControl *ptr);
 
 #endif // USE_MOTOR_CONTROL
+
+
+#ifdef USE_REDUCED_STATUS
+
+typedef struct {
+  float reqTorque;
+  float speed;
+  float time;
+  float acc;
+  float distance;
+} ReducedSideStatus;
+
+void ReducedSideStatus_init(ReducedSideStatus *reducedSideStatus);
+
+typedef struct {
+  ReducedSideStatus right;
+  ReducedSideStatus left;
+  float dir;
+  float dirGyro;
+  float rot;
+  float x;
+  float y;
+} ReducedStatus;
+
+void ReducedStatus_init(ReducedStatus *reducedStatus);
+
+#endif // USE_REDUCED_STATUS
+
+
+
 
 #ifdef __cplusplus
 }

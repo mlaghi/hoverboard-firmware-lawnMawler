@@ -5,6 +5,15 @@
 StreamWebHandler::StreamWebHandler() {
   serial = NULL;
   idx = 0;
+  bufStartFrame = 0;
+  p = NULL;
+  incomingByte = (byte)0;
+  incomingBytePrev = (byte)0;
+  failures = 0L;
+  successes = 0L;
+  oldChecksum = newChecksum = 0;
+
+  printf("Size of MainStatus: %d\n", sizeof(MainStatus));
 };
 
 StreamWebHandler::~StreamWebHandler() {
@@ -21,6 +30,7 @@ esp_err_t StreamWebHandler::request(httpd_req_t *req, const char* buf, size_t bu
   if (serial == NULL)
     return ret;
   
+  Serial.printf("Core %d: requestSequence %d\n", xPortGetCoreID(), buf);
   char printBuf[512];
   int printLength = 0;
   printLength = printMainStatusHeader(printBuf, printLength);
@@ -32,7 +42,7 @@ esp_err_t StreamWebHandler::request(httpd_req_t *req, const char* buf, size_t bu
   while (true) {
     // Check for new data availability in the Serial buffer
     if (serial->available()) {
-      incomingByte = Serial2.read(); // Read the incoming byte
+      incomingByte = serial->read(); // Read the incoming byte
       bufStartFrame	= ((uint16_t)(incomingByte) << 8) | incomingBytePrev;  // Construct the start frame
     }
     else {
@@ -41,7 +51,7 @@ esp_err_t StreamWebHandler::request(httpd_req_t *req, const char* buf, size_t bu
     }
     // Copy received data
     if (bufStartFrame == MAIN_STATUS_START_FRAME) {	                    // Initialize if new data is detected
-        p    = (byte *)&Feedback;
+        p    = (byte *)&feedback;
         *p++ = incomingBytePrev;
         *p++ = incomingByte;
         idx  = 2;	
@@ -54,21 +64,26 @@ esp_err_t StreamWebHandler::request(httpd_req_t *req, const char* buf, size_t bu
     // Check if we reached the end of the package
     if (idx == sizeof(MainStatus)) {
         uint16_t checksum;
-        checksum   = MainStatus_calcChecksum(&Feedback);
+        checksum   = MainStatus_calcChecksum(&feedback);
 
         // Check validity of the new data
-        if (Feedback.start == MAIN_STATUS_START_FRAME && checksum == Feedback.checksum) {
+        if (feedback.start == MAIN_STATUS_START_FRAME && checksum == feedback.checksum) {
+            successes++;
             // Copy the new data
-            size_t dataLength = sizeof(MainStatus);
-            memcpy(&OldFeedback, &Feedback, dataLength);
+            // size_t dataLength = sizeof(MainStatus);
+            // memcpy(&oldFeedback, &feedback, dataLength);
+            oldFeedback = feedback;
             printLength = 0;
-            printLength = printMainStatus(printBuf, printLength, &OldFeedback);
-            printf(printBuf);
+            printLength = printMainStatus(printBuf, printLength, &oldFeedback);
+            // printf(printBuf);
             count++;
             // ret = sendChunk(req, dataLength, (uint8_t*)&OldFeedback, partBufSize, partBuf, count);
-            ret = sendChunk(req, printLength, (uint8_t*)printBuf, partBufSize, partBuf, -1);
+            if (printLength > 0)
+              ret = sendChunk(req, printLength, (uint8_t*)printBuf, partBufSize, partBuf, -1);
+
         } else {
-          Serial.println("Non-valid data skipped");
+          failures++;
+          Serial.printf("Non-valid data skipped failure rate=%12.2f '%'\n", 100.0*failures/(failures+successes));
         }
         idx = 0;    // Reset the index (it prevents to enter in this if condition in the next cycle)
     }
@@ -78,6 +93,61 @@ esp_err_t StreamWebHandler::request(httpd_req_t *req, const char* buf, size_t bu
   }
   return ret;
 };
+
+void StreamWebHandler::serialReceiveLoop() {
+  if (serial == NULL)
+    return;
+  
+  Serial.printf("Core %d\n", xPortGetCoreID());
+  int count = 0;
+  while (true) {
+    // Check for new data availability in the Serial buffer
+    if (serial->available()) {
+      incomingByte = serial->read(); // Read the incoming byte
+      bufStartFrame	= ((uint16_t)(incomingByte) << 8) | incomingBytePrev;  // Construct the start frame
+    }
+    else {
+      delay(10);
+      continue;
+    }
+    // Copy received data
+    if (bufStartFrame == MAIN_STATUS_START_FRAME) {	                    // Initialize if new data is detected
+        p    = (byte *)&feedback;
+        *p++ = incomingBytePrev;
+        *p++ = incomingByte;
+        idx  = 2;	
+    }
+    else if (idx >= 2 && idx < sizeof(MainStatus)) {  // Save the new received data
+        *p++    = incomingByte; 
+        idx++;
+    }	
+    
+    // Check if we reached the end of the package
+    if (idx == sizeof(MainStatus)) {
+        uint16_t checksum;
+        checksum   = MainStatus_calcChecksum(&feedback);
+
+        // Check validity of the new data
+        if (feedback.start == MAIN_STATUS_START_FRAME && checksum == feedback.checksum) {
+            successes++;
+            // Copy the new data
+            // size_t dataLength = sizeof(MainStatus);
+            // memcpy(&oldFeedback, &feedback, dataLength);
+            oldFeedback = feedback;
+
+            count++;
+        } else {
+          failures++;
+          Serial.printf("Non-valid data skipped failure rate=%12.2f '%'\n", 100.0*failures/(failures+successes));
+        }
+        idx = 0;    // Reset the index (it prevents to enter in this if condition in the next cycle)
+    }
+    // Update previous states
+    incomingBytePrev = incomingByte;
+
+  }
+};
+
 
 /**
  * This method is used for stream callbacks i.e. for cases where a multipart request is done
@@ -128,6 +198,14 @@ int StreamWebHandler::printPosition(char *buf, int offs, PositionStatus *pos) {
 }
 
 int StreamWebHandler::printMainStatusHeader(char *buf, int offs) {
+  size_t nmax = sizeof(MainStatus);
+  memset(buf, 0, nmax);
+  uint16_t version = 1;
+  uint32_t processorTime = millis();
+  uint64_t realTime = 0L;
+  sprintf(buf, "%d\tHoverserial\t%d\t%d\t%ld END\n", nmax, version, processorTime, realTime);
+  offs = nmax;
+  /*
   offs = printExtUHeader(buf, offs);
   offs += sprintf(&buf[offs], "\t");
   offs = printExtUHeader(buf, offs);
@@ -140,10 +218,20 @@ int StreamWebHandler::printMainStatusHeader(char *buf, int offs) {
   offs += sprintf(&buf[offs], "\t");
   offs += sprintf(&buf[offs], "cmd1\tcmd2\tspeedR_meas\tspeedL_meas\tbatVoltage\tboardTemp\tcmdLed");
   offs += sprintf(&buf[offs], "\n");
+  */
   return offs;
 }
 
 int StreamWebHandler::printMainStatus(char *buf, int offs, MainStatus *status) {
+  newChecksum = status->checksum;
+  if (newChecksum == oldChecksum)
+    return 0;
+  oldChecksum = newChecksum;
+  size_t nmax = sizeof(MainStatus);
+  memset(buf, 0, nmax);
+  memccpy(buf, status, 1, nmax);
+  offs = nmax;
+  /*
   offs = printExtU(buf, offs, &status->rightExtU);
   offs += sprintf(&buf[offs], "\t");
   offs = printExtU(buf, offs, &status->leftExtU);
@@ -156,5 +244,10 @@ int StreamWebHandler::printMainStatus(char *buf, int offs, MainStatus *status) {
   offs += sprintf(&buf[offs], "\t");
   offs += sprintf(&buf[offs], "%d\t%d\t%d\t%d\t%d\t%d\t%d", status->cmd1, status->cmd2, status->speedR_meas, status->speedL_meas, status->batVoltage, status->boardTemp, status->cmdLed);
   offs += sprintf(&buf[offs], "\n");
+  */
   return offs;
+}
+
+const MainStatus* StreamWebHandler::getFeedback() {
+  return &feedback;
 }

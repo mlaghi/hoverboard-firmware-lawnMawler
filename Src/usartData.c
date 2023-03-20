@@ -3,6 +3,7 @@
  */
 
 #include "usartData.h"
+
 #include <string.h>
 
 #ifdef USE_EXTU
@@ -84,4 +85,30 @@ uint16_T SideboardControl_calcChecksum(SideboardControl *ptr) {
 }
 
 #endif // USE_SIDEBOARD_CONTROL
+
+#ifdef USE_REDUCED_STATUS
+
+void ReducedSideStatus_init(ReducedSideStatus *reducedSideStatus) {
+  if (reducedSideStatus != NULL) {
+    reducedSideStatus->reqTorque = 0;
+    reducedSideStatus->speed = 0;
+    reducedSideStatus->time = 0;
+    reducedSideStatus->acc = 0;
+    reducedSideStatus->distance = 0;
+  }
+}
+
+void ReducedStatus_init(ReducedStatus *reducedStatus) {
+  if (reducedStatus != NULL) {
+    ReducedSideStatus_init(&reducedStatus->right);
+    ReducedSideStatus_init(&reducedStatus->left);
+    reducedStatus->dir = 0;
+    reducedStatus->dirGyro = 0;
+    reducedStatus->rot = 0;
+    reducedStatus->x = 0;
+    reducedStatus->y = 0;
+  }
+}
+
+#endif // USE_REDUCED_STATUS
 

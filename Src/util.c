@@ -170,8 +170,8 @@ static uint32_t Sideboard_R_len = sizeof(Sideboard_R);
 #endif
 
 #if defined(CONTROL_SERIAL_USART2)
-static SerialCommand commandL;
-static SerialCommand commandL_raw;
+/*static*/ MotorControl commandL;
+static MotorControl commandL_raw;
 static uint32_t commandL_len = sizeof(commandL);
   #ifdef CONTROL_IBUS
   static uint16_t ibusL_captured_value[IBUS_NUM_CHANNELS];
@@ -181,7 +181,6 @@ static uint32_t commandL_len = sizeof(commandL);
 #if defined(CONTROL_SERIAL_USART3)
 /*static*/ MotorControl commandR;
 static MotorControl commandR_raw;
-
 static uint32_t commandR_len = sizeof(commandR);
   #ifdef CONTROL_IBUS
   static uint16_t ibusR_captured_value[IBUS_NUM_CHANNELS];
@@ -894,8 +893,8 @@ void readInputRaw(void) {
     #endif
     #if defined(SIDEBOARD_SERIAL_USART3)
     if (inIdx == SIDEBOARD_SERIAL_USART3) {
-      input1[inIdx].raw = Sideboard_R.cmd1;
-      input2[inIdx].raw = Sideboard_R.cmd2;
+      // input1[inIdx].raw = Sideboard_R.cmd1; // FORK
+      // input2[inIdx].raw = Sideboard_R.cmd2; // FORK
     }
     #endif
 
@@ -995,11 +994,13 @@ void handleTimeout(void) {
         #endif
       } else {                                          // No Timeout
         #if defined(DUAL_INPUTS) && defined(SIDEBOARD_SERIAL_USART3)
+          /* FORK
           if (Sideboard_R.sensors & SWA_SET) {          // If SWA is set, switch to Sideboard control
             inIdx = SIDEBOARD_SERIAL_USART3;
           } else {
             inIdx = !SIDEBOARD_SERIAL_USART3;
           }
+          */
         #elif defined(DUAL_INPUTS) && (defined(CONTROL_SERIAL_USART3) && CONTROL_SERIAL_USART3 == 1)
           inIdx = 1;                                    // Switch to Auxiliary input in case of NO Timeout on Auxiliary input
         #endif
@@ -1488,7 +1489,7 @@ void sideboardSensors(uint8_t sensors) {
     uint16_t sideboardSns = 0; // Sideboard_L.sensors; // FORK
     #else
     uint8_t  sideboardIdx = SIDEBOARD_SERIAL_USART3;
-    uint16_t sideboardSns = Sideboard_R.sensors;
+    uint16_t sideboardSns = 0; // Sideboard_R.sensors; // FORK
     #endif
 
     if (inIdx == sideboardIdx) {                                  // Use Sideboard data
@@ -1626,8 +1627,9 @@ void poweroff(void) {
     HAL_Delay(100);
   }
   saveConfig();
-  HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
-  while(1) {}
+  // HAL_GPIO_WritePin(OFF_PORT, OFF_PIN, GPIO_PIN_RESET);
+  // while(1) {}
+  stopProcessor();
 }
 
 

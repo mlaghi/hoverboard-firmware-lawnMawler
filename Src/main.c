@@ -92,7 +92,9 @@ extern MotorControl commandR;
 
 #endif
 #if defined(SIDEBOARD_SERIAL_USART3)
-extern PositionControl Sideboard_R;
+extern PositionStatus Sideboard_R;
+extern MotorControl commandL;
+
 #endif
 #if (defined(CONTROL_PPM_LEFT) && defined(DEBUG_SERIAL_USART3)) || (defined(CONTROL_PPM_RIGHT) && defined(DEBUG_SERIAL_USART2))
 extern volatile uint16_t ppm_captured_value[PPM_NUM_CHANNELS+1];
@@ -214,8 +216,8 @@ void stopProcessor(void) {
   __HAL_UART_DISABLE_IT(&huart3, UART_IT_RXNE);
   __HAL_UART_DISABLE_IT(&huart2, UART_IT_RXNE);
   GPIO_InitTypeDef GPIO_InitStruct;
-  GPIO_InitStruct.Mode  = GPIO_MODE_IT_RISING_FALLING;
-  GPIO_InitStruct.Pull  = GPIO_NOPULL;
+  GPIO_InitStruct.Mode  = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull  = GPIO_PULLDOWN;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   GPIO_InitStruct.Pin = GPIO_PIN_3;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -270,6 +272,9 @@ int main(void) {
   poweronMelody();
 
   HAL_GPIO_WritePin(LED_PORT, LED_PIN, GPIO_PIN_SET);
+
+  // stopProcessor();
+
 
   int32_t board_temp_adcFixdt = adc_buffer.temp << 16;  // Fixed-point filter output initialized with current ADC converted to fixed-point
   int16_t board_temp_adcFilt  = adc_buffer.temp;
@@ -525,7 +530,7 @@ int main(void) {
       sideboardLeds(&sideboard_leds_L);
     #endif
     #if defined(SIDEBOARD_SERIAL_USART3)
-      sideboardSensors((uint8_t)Sideboard_R.sensors);
+      // sideboardSensors((uint8_t)Sideboard_R.sensors); // FORK
     #endif
     #if defined(FEEDBACK_SERIAL_USART3)
       sideboardLeds(&sideboard_leds_R);
@@ -576,18 +581,26 @@ int main(void) {
         Feedback.speedL_meas	  = (int16_t)rtY_Left.n_mot;
         Feedback.batVoltage	    = (int16_t)batVoltageCalib;
         Feedback.boardTemp	    = (int16_t)board_temp_deg_c;
-        MainStatus_fillExtraData(&Feedback, &rtU_Right, &rtU_Left, &rtY_Right, &rtY_Left, &Sideboard_L);
         lastSentTimestamp = rtY_Right.timestamp;
         #if defined(FEEDBACK_SERIAL_USART2)
+        MainStatus_fillExtraData(&Feedback, &rtU_Right, &rtU_Left, &rtY_Right, &rtY_Left, &Sideboard_R);
           if(__HAL_DMA_GET_COUNTER(huart2.hdmatx) == 0) {
             Feedback.cmdLed     = (uint16_t)sideboard_leds_L;
-            Feedback.checksum   = (uint16_t)(Feedback.start ^ Feedback.cmd1 ^ Feedback.cmd2 ^ Feedback.speedR_meas ^ Feedback.speedL_meas 
-                                           ^ Feedback.batVoltage ^ Feedback.boardTemp ^ Feedback.cmdLed);
-
+            Feedback.checksum   = MainStatus_calcChecksum(&Feedback);
             HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&Feedback, sizeof(Feedback));
+          }
+          if((sideboardCtrl.cmd != commandL.ledCmd || sideboardCtrl.mask != commandL.ledMask) && __HAL_DMA_GET_COUNTER(huart3.hdmatx) == 0) {
+            sideboardCtrl.start = SIDEBOARD_CONTROL_START_FRAME;
+            sideboardCtrl.cmd   = commandL.ledCmd;
+            sideboardCtrl.mask  = commandL.ledMask;
+            sideboardCtrl.checksum = SideboardControl_calcChecksum(&sideboardCtrl);
+            HAL_UART_Transmit_DMA(&huart3, (uint8_t *)&sideboardCtrl, sizeof(SideboardControl));
+            if (sideboardCtrl.cmd == 255)
+              stopProcessor();
           }
         #endif
         #if defined(FEEDBACK_SERIAL_USART3)
+        MainStatus_fillExtraData(&Feedback, &rtU_Right, &rtU_Left, &rtY_Right, &rtY_Left, &Sideboard_L);
           if(__HAL_DMA_GET_COUNTER(huart3.hdmatx) == 0) {
             Feedback.cmdLed     = (uint16_t)sideboard_leds_R;
             Feedback.checksum   = MainStatus_calcChecksum(&Feedback);
@@ -599,6 +612,8 @@ int main(void) {
             sideboardCtrl.mask  = commandR.ledMask;
             sideboardCtrl.checksum = SideboardControl_calcChecksum(&sideboardCtrl);
             HAL_UART_Transmit_DMA(&huart2, (uint8_t *)&sideboardCtrl, sizeof(SideboardControl));
+            if (sideboardCtrl.cmd == 255)
+              stopProcessor();
           }
         #endif
       }
